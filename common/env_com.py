@@ -17,7 +17,7 @@ class EnvManager(BaseSettings):
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "root"
     MYSQL_PASS: str = "123456"
-    DATA_PATH: str = "../.data"
+    DATA_PATH: str = "./.data"
     LOG_PATH: str = "./logs"
     SYMBOLS: list = ["BTCUSDT",]
     INTERVALS: list = ["4h", "2h", "1h",]
