@@ -10,7 +10,7 @@ import zipfile
 from common.env_com import env_mgr
 from common.log_com import LogManager
 
-logger = LogManager(name="executor").get_logger()
+logger = LogManager(name="collector").get_logger()
 
 
 class BinanceCsvDownloader:

@@ -72,4 +72,5 @@ if __name__ == "__main__":
     # download_binance_spot_monthly_klines_csv()
     # download_binance_spot_daily_klines_csv()
     # check_binance_spot_monthly_klines_csv()
-    check_binance_spot_daily_klines_csv()
+    # check_binance_spot_daily_klines_csv()
+    pass
