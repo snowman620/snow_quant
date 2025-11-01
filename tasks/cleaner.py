@@ -12,7 +12,7 @@ logger = LogManager(name="cleaner").get_logger()
 @app.task(bind=True, name="task_check_binance_spot_monthly_klines_csv", queue="cleaner")
 def task_check_binance_spot_monthly_klines_csv(self, **kwargs):
     try:
-        cleaner = BinanceCsvCleaner("monthly", kwargs["symbol"], kwargs["interval"], kwargs["date"])
+        cleaner = BinanceCsvCleaner("monthly", kwargs["symbol"], kwargs["interval"])
         cleaner.check_spot_klines_csv()
     except Exception as e:
         logger.error(f"Check Failed")
@@ -22,7 +22,7 @@ def task_check_binance_spot_monthly_klines_csv(self, **kwargs):
 @app.task(bind=True, name="task_check_binance_spot_daily_klines_csv", queue="cleaner")
 def task_check_binance_spot_daily_klines_csv(self, **kwargs):
     try:
-        cleaner = BinanceCsvCleaner("daily", kwargs["symbol"], kwargs["interval"], kwargs["date"])
+        cleaner = BinanceCsvCleaner("daily", kwargs["symbol"], kwargs["interval"])
         cleaner.check_spot_klines_csv()
     except Exception as e:
         logger.error(f"Check Failed")

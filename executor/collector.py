@@ -7,10 +7,17 @@ import time
 import hashlib
 import requests
 import zipfile
+from datetime import datetime
+import polars as pl
+from binance.client import Client
 from common.env_com import env_mgr
 from common.log_com import LogManager
 
 logger = LogManager(name="collector").get_logger()
+
+
+pl.Config.set_tbl_rows(10_000_000)
+pl.Config.set_tbl_cols(10_000_000)
 
 
 class BinanceCsvDownloader:
@@ -87,6 +94,54 @@ class BinanceCsvDownloader:
         self._save_csv()
 
 
-class BinanceRealTimeDownloader:
+class BinanceApiDownloader:
     """币安实时数据下载器"""
-    pass
+    
+    def __init__(self):
+        self._ak = ""
+        self._sk = ""
+        self._client = Client()
+        self._sleep = 0.5
+    
+    def get_klines(self, symbol: str, interval: str, start_time: int, end_time: int, limit: int = 100):
+        """获取单批次K线数据"""
+
+        # cols = [
+        #     "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_asset_volume", 
+        #     "num_trades", "taker_buy_base", "taker_buy_quote", "ignore"]
+
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit,
+            "startTime": start_time,
+            "endTime": end_time
+        }
+        data = self._client.get_klines(**params)
+        return data
+
+
+class BinanceUiDownloader:
+    """币安UI数据下载器"""
+    
+    def __init__(self):
+        self._url = "https://www.binance.com/api/v3/uiKlines"
+
+    def get_uiklines(self, symbol: str, interval: str, start_time: int, end_time: int, limit: int = 100):
+        """调用uiKlines API"""
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit,
+            "startTime": start_time,
+            "endTime": end_time
+        }
+        resp = requests.get(self._url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
+if __name__ == "__main__":
+    downloader = BinanceUiDownloader()
+    data = downloader.get_uiklines(symbol="BTCUSDT", interval="1h", start_time=1679655600000, end_time=1679666400000)
+    print(data)
