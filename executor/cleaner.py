@@ -4,14 +4,10 @@
 
 import os
 import polars as pl
-from datetime import datetime, timezone
 from common.env_com import env_mgr
 from common.log_com import LogManager
 
 logger = LogManager(name="cleaner").get_logger()
-
-# pl.Config.set_tbl_rows(10_000_000)
-# pl.Config.set_tbl_cols(10_000_000)
 
 
 class BinanceCsvBase:
@@ -23,6 +19,20 @@ class BinanceCsvBase:
             "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_asset_volume", 
             "number_of_trades", "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
         ]
+        self._schemas = {
+            "open_time": pl.Int64,
+            "open": pl.Float64,
+            "high": pl.Float64,
+            "low": pl.Float64,
+            "close": pl.Float64,
+            "volume": pl.Float64,
+            "close_time": pl.Int64,
+            "quote_asset_volume": pl.Float64,
+            "number_of_trades": pl.Float64,
+            "taker_buy_base_asset_volume": pl.Float64,
+            "taker_buy_quote_asset_volume": pl.Float64,
+            "ignore": pl.Int64
+        }
         self.interval_map = {"4h": 14400, "2h": 7200, "1h": 3600, "30m": 1800, "15m": 900, "5m": 300}
         self._period = period
         self._symbol = symbol
@@ -66,7 +76,7 @@ class BinanceCsvMerger(BinanceCsvBase):
         dfs = []
         for f in sorted(files):
             file_path = os.path.join(self._csv_dir, f)
-            df_part = pl.read_csv(file_path, has_header=False, new_columns=self._cloumns)
+            df_part = pl.read_csv(file_path, has_header=False, new_columns=self._cloumns, schema=self._schemas)
             
             df_part = df_part.with_columns([
                 (pl.col("open_time") * 1000).cast(pl.Int64).alias("open_time"),
@@ -80,7 +90,7 @@ class BinanceCsvMerger(BinanceCsvBase):
         dfs = []
         for f in sorted(files):
             file_path = os.path.join(self._csv_dir, f)
-            df_part = pl.read_csv(file_path, has_header=False, new_columns=self._cloumns)
+            df_part = pl.read_csv(file_path, has_header=False, new_columns=self._cloumns, schema=self._schemas)
             dfs.append(df_part)
         return dfs
 
@@ -96,26 +106,51 @@ class BinanceCsvCleaner(BinanceCsvBase):
         """加载DataFrame"""
         filename = os.listdir(self._cleaned_dir)[0]
         file_path = os.path.join(self._cleaned_dir, filename)
-        df = pl.read_csv(file_path, has_header=False, new_columns=self._cloumns)
+        df = pl.read_csv(file_path, has_header=False, new_columns=self._cloumns, schema=self._schemas)
         return df
     
-    def check_time_continuity(self):
+    def _check_time_continuity(self):
         """识别时间不连续的行"""
         interval = self.interval_map[self._interval] * 1_000_000
         diffs = self._df["open_time"].diff().to_list()[1:]
         for i, d in enumerate(diffs):
             if d != interval:
-                logger.error(f"第{i}行到第{i+1}行间隔 {d} ms")
+                raise ValueError(f"{self._interval} 第{i}行到第{i+1}行间隔 {d} ms")
+    
+    def _check_null_values(self):
+        """检查空值"""
+        null_counts_obj = self._df.null_count()
+        counts = list(null_counts_obj.row(0))
+        null_map = {c: int(n) for c, n in zip(self._df.columns, counts) if int(n) > 0}
+        if null_map:
+            raise ValueError(f"发现空值: {null_map}")
+
+    def _check_abnormal_values(self):
+        """检查异常值"""
+        invalid = self._df.filter((pl.col("open") <= 0) | (pl.col("high") <= 0) | (pl.col("low") <= 0) | (pl.col("close") <= 0) | (pl.col("volume") < 0) | (pl.col("high") < pl.col("low")))
+        if invalid.height > 0:
+            raise ValueError(f"发现 {invalid.height} 个异常值")
+
+    def _check_price_consistency(self):
+        """价格一致性检查"""
+        invalid = self._df.filter((pl.col("low") > pl.col("high")) | (pl.col("open") > pl.col("high")) | (pl.col("open") < pl.col("low")) | (pl.col("close") > pl.col("high")) | (pl.col("close") < pl.col("low")))
+        if invalid.height > 0:
+            raise ValueError(f"发现 {invalid.height} 个异常价格")
+    
+    def _check_duplicate_timestamps(self):
+        """重复时间戳检查"""
+        dupes = self._df.group_by("open_time").agg(pl.len()).filter(pl.col("len") > 1)
+        if dupes.height > 0:
+            raise ValueError(f"发现 {dupes.height} 个重复时间戳")
 
     def fix_time_continuity(self):
         """线性插值"""
         filename = os.listdir(self._cleaned_dir)[0]
-        filename_fixed = filename.replace(".csv", "-fix.csv")
-        out_path = os.path.join(self._cleaned_dir, filename_fixed)
+        out_path = os.path.join(self._cleaned_dir, filename)
 
-        if os.path.exists(out_path):
-            logger.warning(f"已存在修复后的文件: {out_path}")
-            return
+        # if os.path.exists(out_path):
+        #     logger.warning(f"已存在修复后的文件: {out_path}")
+        #     return
 
         # 读取第一行和最后一行的open_time
         first_time = self._df["open_time"][0]
@@ -151,49 +186,38 @@ class BinanceCsvCleaner(BinanceCsvBase):
 
         df_interp = df_full.with_columns(exprs)
 
+        # 线性插值后，把 number_of_trades 全部转为 Float64
+        self._df = self._df.with_columns(pl.col("number_of_trades").cast(pl.Float64))
+
+        # 直接把 ignore 列设为整型常量 0
+        df_interp = df_interp.with_columns(pl.lit(0).cast(pl.Int64).alias("ignore"))
+
         # 输出结果
         df_interp.write_csv(out_path, include_header=False)
 
-    def check_null_values(self):
-        """检查空值"""
-        null_counts_obj = self._df.null_count()
-        counts = list(null_counts_obj.row(0))
-        null_map = {c: int(n) for c, n in zip(self._df.columns, counts) if int(n) > 0}
-        if null_map:
-            raise ValueError(f"发现空值: {null_map}")
-
-    def check_abnormal_values(self):
-        """检查异常值"""
-        invalid = self._df.filter((pl.col("open") <= 0) | (pl.col("high") <= 0) | (pl.col("low") <= 0) | (pl.col("close") <= 0) | (pl.col("volume") < 0) | (pl.col("high") < pl.col("low")))
-        if invalid.height > 0:
-            raise ValueError(f"发现 {invalid.height} 个异常值")
-
-    def check_price_consistency(self):
-        """价格一致性检查"""
-        invalid = self._df.filter((pl.col("low") > pl.col("high")) | (pl.col("open") > pl.col("high")) | (pl.col("open") < pl.col("low")) | (pl.col("close") > pl.col("high")) | (pl.col("close") < pl.col("low")))
-        if invalid.height > 0:
-            raise ValueError(f"发现 {invalid.height} 个异常价格")
-    
-    def check_duplicate_timestamps(self):
-        """重复时间戳检查"""
-        dupes = self._df.group_by("open_time").agg(pl.len()).filter(pl.col("len") > 1)
-        if dupes.height > 0:
-            raise ValueError(f"发现 {dupes.height} 个重复时间戳")
-
-    # def _save_parquet(self):
-    #     """把CSV文件转成Parquet文件"""
-    #     filename = f"{self._symbol}-{self._interval}.parquet"
-    #     path_dir = os.path.join(self._base_dir, "binance", "cleaned", "spot", "klines", self._symbol, self._interval)
-    #     file_path = os.path.join(path_dir, filename)
-    #     os.makedirs(path_dir, exist_ok=True)
-    #     self._df.write_parquet(file_path)
+    def check_spot_klines_csv(self):
+        """检查CSV文件内容是否合理"""
+        self._check_time_continuity()
+        self._check_null_values()
+        self._check_abnormal_values()
+        self._check_price_consistency()
+        self._check_duplicate_timestamps()
 
 
 if __name__ == "__main__":
-    cleaner = BinanceCsvCleaner(period="monthly", symbol="BTCUSDT", interval="4h")
-    cleaner.check_time_continuity()
-    cleaner.fix_time_continuity()
-    cleaner.check_null_values()
-    cleaner.check_abnormal_values()
-    cleaner.check_price_consistency()
-    cleaner.check_duplicate_timestamps()
+    intervals = ["4h", "2h", "1h", "30m", "15m", "5m"]
+    
+    # 先合并
+    # for i in intervals:
+    #     merger = BinanceCsvMerger("monthly", "BTCUSDT", i)
+    #     merger.merge_all_csv()
+    
+    # 再检测
+    # for i in intervals:
+    #     cleaner = BinanceCsvCleaner("monthly", "BTCUSDT", i)
+    #     cleaner.check_spot_klines_csv()
+    
+    # 最后线性插值，没问题的也要执行，需要转换数值类型
+    # for i in intervals:
+    #     cleaner = BinanceCsvCleaner("monthly", "BTCUSDT", i)
+    #     cleaner.fix_time_continuity()

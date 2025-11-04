@@ -7,17 +7,11 @@ import time
 import hashlib
 import requests
 import zipfile
-from datetime import datetime
-import polars as pl
 from binance.client import Client
 from common.env_com import env_mgr
 from common.log_com import LogManager
 
 logger = LogManager(name="collector").get_logger()
-
-
-pl.Config.set_tbl_rows(10_000_000)
-pl.Config.set_tbl_cols(10_000_000)
 
 
 class BinanceCsvDownloader:
@@ -121,27 +115,8 @@ class BinanceApiDownloader:
         return data
 
 
-class BinanceUiDownloader:
-    """币安UI数据下载器"""
-    
-    def __init__(self):
-        self._url = "https://www.binance.com/api/v3/uiKlines"
-
-    def get_uiklines(self, symbol: str, interval: str, start_time: int, end_time: int, limit: int = 100):
-        """调用uiKlines API"""
-        params = {
-            "symbol": symbol,
-            "interval": interval,
-            "limit": limit,
-            "startTime": start_time,
-            "endTime": end_time
-        }
-        resp = requests.get(self._url, params=params)
-        resp.raise_for_status()
-        return resp.json()
-
-
 if __name__ == "__main__":
-    downloader = BinanceUiDownloader()
-    data = downloader.get_uiklines(symbol="BTCUSDT", interval="1h", start_time=1679655600000, end_time=1679666400000)
-    print(data)
+    intervals = ["4h", "2h", "1h", "30m", "15m", "5m"]
+    # for i in intervals:
+    #     downloader = BinanceCsvDownloader("monthly", "BTCUSDT", i, "2025-10")
+    #     downloader.download_spot_klines_csv()

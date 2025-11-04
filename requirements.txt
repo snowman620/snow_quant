@@ -19,6 +19,7 @@ frozenlist==1.8.0
 idna==3.11
 kombu==5.5.4
 multidict==6.7.0
+numpy==2.2.6
 packaging==25.0
 polars==1.34.0
 polars-runtime-32==1.34.0
