@@ -288,6 +288,6 @@ class BinanceCsvAnalyst:
 
 if __name__ == "__main__":
     intervals = ["4h", "2h", "1h", "30m", "15m", "5m"]
-    for i in intervals:
-        analyst = BinanceCsvAnalyst("BTCUSDT", i)
-        analyst.analyze()
+    # for i in intervals:
+    #     analyst = BinanceCsvAnalyst("BTCUSDT", i)
+    #     analyst.analyze()
