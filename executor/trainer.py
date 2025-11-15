@@ -53,6 +53,10 @@ class BinanceTrainer:
         columns = self._cloumns + ["label"]
         df = pl.read_parquet(self._parquet_path, columns=columns)
         # df.sort("open_time")
+        print("Label distribution:")
+        print(df["label"].value_counts())
+        print("\nCorrelation with label:")
+        print(df.select([pl.col("label"), *df.columns[:-1]]).corr())
         return df
 
     def time_split(self, train_ratio: float = 0.8):
@@ -97,7 +101,7 @@ class BinanceTrainer:
             default_params,
             train_data,
             valid_sets=[train_data, valid_data],
-            num_boost_round=2000,
+            num_boost_round=1000,
             callbacks=callbacks,
         )
 
@@ -153,4 +157,4 @@ class BinanceTrainer:
 
 if __name__ == "__main__":
     trainer = BinanceTrainer("BTCUSDT", "4h", "shape")
-    # trainer.train_lightgbm()
+    trainer.train_lightgbm()
